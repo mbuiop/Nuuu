@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>چارت حرفه‌ای — کریپتو و فارکس</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<script src="/static/lib/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg:#0b0e11; --panel:#161a1e; --panel2:#1e2329; --border:#2b3139;
+    --text:#eaecef; --text-dim:#848e9c; --accent:#3861fb;
+    --up:#0ecb81; --down:#f6465d; --up-soft:#0ecb8122; --down-soft:#f6465d22;
+    --radius:12px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Tahoma,sans-serif;
+    background:var(--bg);color:var(--text);overflow:hidden;overscroll-behavior:none;}
+
+  #app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+
+  /* ===== Header ===== */
+  #header{background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;
+    padding-top:env(safe-area-inset-top);}
+  #symbolRow{display:flex;align-items:center;gap:10px;padding:10px 14px 8px;}
+  #symbolPicker{display:flex;align-items:center;gap:6px;background:var(--panel2);
+    border:1px solid var(--border);border-radius:10px;padding:7px 10px;cursor:pointer;flex-shrink:0;}
+  #symbolPicker .badge{font-size:10px;color:var(--text-dim);background:var(--bg);padding:1px 6px;border-radius:4px;}
+  #symbolPicker .name{font-weight:800;font-size:15px;}
+  #symbolPicker .chev{color:var(--text-dim);font-size:11px;margin-inline-start:2px;}
+  #priceBlock{margin-inline-start:auto;text-align:left;}
+  #symbolPrice{font-size:17px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;}
+  #symbolChange{font-size:12px;font-weight:700;line-height:1.3;}
+  .up-text{color:var(--up);} .down-text{color:var(--down);}
+
+  #tfRow{display:flex;align-items:center;gap:4px;padding:0 10px 8px;overflow-x:auto;scrollbar-width:none;}
+  #tfRow::-webkit-scrollbar{display:none;}
+  .tf-btn{background:transparent;border:none;color:var(--text-dim);padding:6px 12px;cursor:pointer;
+    border-radius:8px;font-size:13px;font-weight:700;flex-shrink:0;white-space:nowrap;}
+  .tf-btn.active{background:var(--accent);color:#fff;}
+  .tf-sep{width:1px;height:16px;background:var(--border);flex-shrink:0;margin:0 2px;}
+  #indDrawerBtn{margin-inline-start:auto;flex-shrink:0;background:var(--panel2);border:1px solid var(--border);
+    color:var(--text);padding:6px 12px;border-radius:8px;font-size:12.5px;font-weight:700;
+    display:flex;align-items:center;gap:5px;white-space:nowrap;}
+  #indDrawerBtn .cnt{background:var(--accent);color:#fff;border-radius:50%;width:16px;height:16px;
+    font-size:10px;display:flex;align-items:center;justify-content:center;}
+
+  /* ===== Chart area ===== */
+  #chartArea{flex:1;display:flex;flex-direction:column;min-height:0;position:relative;background:var(--bg);}
+  #mainPane{flex:0 0 auto;height:56%;min-height:220px;}
+  #subPanes{flex:1;display:flex;flex-direction:column;min-height:0;overflow-y:auto;}
+  .sub-pane{flex-shrink:0;height:120px;border-top:1px solid var(--border);position:relative;}
+  .sub-pane-label{position:absolute;top:4px;right:8px;z-index:5;font-size:10.5px;font-weight:800;
+    color:var(--text-dim);pointer-events:none;background:linear-gradient(to left, var(--bg) 60%, transparent);
+    padding:2px 6px 2px 20px;}
+  .sub-pane-label .val{color:var(--text);margin-inline-start:6px;}
+
+  #loadingOverlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(11,14,17,0.65);font-size:13px;color:var(--text-dim);opacity:0;pointer-events:none;
+    transition:opacity .15s;z-index:15;flex-direction:column;gap:8px;}
+  #loadingOverlay.show{opacity:1;}
+  .spinner{width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--accent);
+    border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  #errBanner{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#3a1414;color:#ff8a80;
+    border:1px solid #5c1f1f;padding:8px 14px;border-radius:8px;font-size:12px;display:none;z-index:20;
+    max-width:88%;text-align:center;}
+
+  /* ===== Bottom sheet (shared for symbol picker + indicators) ===== */
+  .sheet-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:100;}
+  .sheet-overlay.show{display:block;}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-radius:16px 16px 0 0;
+    max-height:82vh;display:flex;flex-direction:column;z-index:101;
+    transform:translateY(100%);transition:transform .22s ease;
+    padding-bottom:env(safe-area-inset-bottom);}
+  .sheet.show{transform:translateY(0);}
+  .sheet-handle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:10px auto 4px;}
+  .sheet-header{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px;
+    border-bottom:1px solid var(--border);}
+  .sheet-header h3{margin:0;font-size:15px;}
+  .sheet-close{background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;padding:4px;}
+
+  /* Symbol picker sheet */
+  #marketTabs{display:flex;border-bottom:1px solid var(--border);}
+  .market-tab{flex:1;text-align:center;padding:11px 0;cursor:pointer;font-size:13.5px;font-weight:700;
+    color:var(--text-dim);border-bottom:2px solid transparent;}
+  .market-tab.active{color:var(--text);border-bottom-color:var(--accent);}
+  #searchBox{padding:10px 14px;}
+  #searchInput{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    padding:10px 12px;border-radius:10px;font-size:14px;outline:none;}
+  #symbolList{overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;}
+  .sym-row{display:flex;justify-content:space-between;align-items:center;padding:11px 16px;cursor:pointer;
+    border-bottom:1px solid rgba(255,255,255,0.04);}
+  .sym-row.active{background:rgba(56,97,251,0.12);}
+  .sym-name{font-weight:800;font-size:14px;}
+  .sym-sub{color:var(--text-dim);font-size:11px;margin-top:1px;}
+  .sym-right{text-align:left;}
+  .sym-price{font-weight:700;font-size:13.5px;font-variant-numeric:tabular-nums;}
+
+  /* Indicator sheet */
+  #indList{overflow-y:auto;padding:6px 8px 16px;}
+  .ind-row{display:flex;align-items:center;justify-content:space-between;padding:13px 12px;
+    border-bottom:1px solid rgba(255,255,255,0.04);}
+  .ind-row .ind-name{font-size:14px;font-weight:700;}
+  .ind-row .ind-desc{font-size:11px;color:var(--text-dim);margin-top:2px;}
+  .switch{width:42px;height:24px;background:var(--panel2);border:1px solid var(--border);border-radius:12px;
+    position:relative;cursor:pointer;flex-shrink:0;}
+  .switch .knob{width:18px;height:18px;background:var(--text-dim);border-radius:50%;position:absolute;
+    top:2px;right:2px;transition:all .15s;}
+  .switch.on{background:var(--accent);border-color:var(--accent);}
+  .switch.on .knob{background:#fff;right:20px;}
+
+  ::-webkit-scrollbar{width:6px;height:6px;} ::-webkit-scrollbar-thumb{background:#2b3139;border-radius:3px;}
+
+  /* ===== Desktop layout ===== */
+  @media (min-width:900px){
+    #app{max-width:1400px;margin:0 auto;}
+    #symbolRow{padding:12px 20px 10px;}
+    #tfRow{padding:0 16px 10px;}
+    #mainPane{height:62%;}
+    .sub-pane{height:140px;}
+    .sheet{left:50%;right:auto;transform:translate(-50%,100%);width:420px;border-radius:16px;
+      top:50%;bottom:auto;max-height:70vh;}
+    .sheet.show{transform:translate(-50%,-50%);}
+    .sheet-overlay{backdrop-filter:blur(2px);}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="header">
+    <div id="symbolRow">
+      <div id="symbolPicker">
+        <span class="badge" id="marketBadge">کریپتو</span>
+        <span class="name" id="symbolTitle">BTCUSDT</span>
+        <span class="chev">▾</span>
+      </div>
+      <div id="priceBlock">
+        <div id="symbolPrice">--</div>
+        <div id="symbolChange">--</div>
+      </div>
+    </div>
+    <div id="tfRow">
+      <button class="tf-btn" data-tf="1m">1m</button>
+      <button class="tf-btn" data-tf="5m">5m</button>
+      <button class="tf-btn" data-tf="15m">15m</button>
+      <button class="tf-btn active" data-tf="1h">1h</button>
+      <button class="tf-btn" data-tf="4h">4h</button>
+      <button class="tf-btn" data-tf="1d">1D</button>
+      <button class="tf-btn" data-tf="1w">1W</button>
+      <div class="tf-sep"></div>
+      <button id="indDrawerBtn">📊 اندیکاتورها <span class="cnt" id="indCount">1</span></button>
+    </div>
+  </div>
+
+  <div id="chartArea">
+    <div id="errBanner"></div>
+    <div id="mainPane"></div>
+    <div id="subPanes"></div>
+    <div id="loadingOverlay"><div class="spinner"></div><div>در حال بارگذاری...</div></div>
+  </div>
+
+</div>
+
+<!-- Symbol picker sheet -->
+<div class="sheet-overlay" id="symbolOverlay"></div>
+<div class="sheet" id="symbolSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><h3>انتخاب نماد</h3><button class="sheet-close" id="closeSymbolSheet">✕</button></div>
+  <div id="marketTabs">
+    <div class="market-tab active" data-market="crypto">ارز دیجیتال (۱۰۰)</div>
+    <div class="market-tab" data-market="forex">فارکس (۱۰۰)</div>
+  </div>
+  <div id="searchBox"><input id="searchInput" placeholder="جستجوی نماد..."></div>
+  <div id="symbolList"></div>
+</div>
+
+<!-- Indicator sheet -->
+<div class="sheet-overlay" id="indOverlay"></div>
+<div class="sheet" id="indSheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header"><h3>اندیکاتورها</h3><button class="sheet-close" id="closeIndSheet">✕</button></div>
+  <div id="indList"></div>
+</div>
+
+<script>
+const API = "";
+let currentMarket = "crypto";
+let currentSymbol = "BTCUSDT";
+let currentInterval = "1h";
+let allSymbols = { crypto: [], forex: [] };
+let mainChart, candleSeries, volumeSeries;
+let overlaySeries = {};   // indicators drawn on main pane (sma, ema, bb)
+let subCharts = {};       // indicators in their own sub-pane (rsi, macd, stoch)
+let lastCandles = [];
+
+const twelveDataIntervalMap = {"1m":"1min","5m":"5min","15m":"15min","1h":"1h","4h":"4h","1d":"1day","1w":"1week"};
+
+const INDICATORS = [
+  {id:'vol',  name:'حجم معاملات (Volume)', desc:'روی چارت اصلی', type:'overlay', default:true},
+  {id:'sma',  name:'میانگین متحرک ساده (SMA 20)', desc:'روی چارت اصلی', type:'overlay', default:false},
+  {id:'ema',  name:'میانگین متحرک نمایی (EMA 50)', desc:'روی چارت اصلی', type:'overlay', default:false},
+  {id:'bb',   name:'باند بولینگر (Bollinger Bands)', desc:'روی چارت اصلی', type:'overlay', default:false},
+  {id:'rsi',  name:'RSI (14)', desc:'پنل جداگانه پایین چارت', type:'sub', default:true},
+  {id:'macd', name:'MACD (12,26,9)', desc:'پنل جداگانه پایین چارت', type:'sub', default:false},
+  {id:'stoch',name:'استوکاستیک (Stochastic)', desc:'پنل جداگانه پایین چارت', type:'sub', default:false},
+];
+let activeInd = {};
+INDICATORS.forEach(i => activeInd[i.id] = i.default);
+
+function getApiKey(){ return localStorage.getItem("td_api_key") || ""; }
+
+/* ---------------- Chart setup ---------------- */
+function baseChartOptions(extra){
+  return Object.assign({
+    layout:{background:{color:'#0b0e11'}, textColor:'#848e9c', fontSize:11},
+    grid:{vertLines:{color:'#161a1e'}, horzLines:{color:'#161a1e'}},
+    timeScale:{timeVisible:true, secondsVisible:false, borderColor:'#2b3139'},
+    rightPriceScale:{borderColor:'#2b3139'},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+    handleScroll:true, handleScale:true,
+  }, extra||{});
+}
+
+function initMainChart(){
+  const el = document.getElementById('mainPane');
+  mainChart = LightweightCharts.createChart(el, baseChartOptions({
+    timeScale:{timeVisible:true, secondsVisible:false, borderColor:'#2b3139', visible:false},
+  }));
+  candleSeries = mainChart.addCandlestickSeries({
+    upColor:'#0ecb81', downColor:'#f6465d', borderVisible:false,
+    wickUpColor:'#0ecb81', wickDownColor:'#f6465d',
+  });
+  volumeSeries = mainChart.addHistogramSeries({
+    priceFormat:{type:'volume'}, priceScaleId:'vol',
+  });
+  mainChart.priceScale('vol').applyOptions({scaleMargins:{top:0.85, bottom:0}});
+
+  new ResizeObserver(()=>{
+    mainChart.applyOptions({width:el.clientWidth, height:el.clientHeight});
+    Object.values(subCharts).forEach(sc=>{
+      sc.chart.applyOptions({width:sc.el.clientWidth, height:sc.el.clientHeight});
+    });
+  }).observe(document.getElementById('chartArea'));
+}
+
+function ensureSubPane(id, title, color){
+  if(subCharts[id]) return subCharts[id];
+  const wrap = document.createElement('div');
+  wrap.className = 'sub-pane';
+  wrap.id = 'sub_'+id;
+  const label = document.createElement('div');
+  label.className = 'sub-pane-label';
+  label.innerHTML = title + ' <span class="val" id="val_'+id+'"></span>';
+  wrap.appendChild(label);
+  document.getElementById('subPanes').appendChild(wrap);
+
+  const chart = LightweightCharts.createChart(wrap, baseChartOptions({}));
+  chart.applyOptions({width:wrap.clientWidth, height:wrap.clientHeight});
+
+  mainChart.timeScale().subscribeVisibleLogicalRangeChange(r=>{
+    if(r) chart.timeScale().setVisibleLogicalRange(r);
+  });
+
+  subCharts[id] = {chart, el:wrap, series:{}};
+  return subCharts[id];
+}
+
+function removeSubPane(id){
+  if(!subCharts[id]) return;
+  subCharts[id].chart.remove();
+  subCharts[id].el.remove();
+  delete subCharts[id];
+}
+
+/* ---------------- Indicator math ---------------- */
+function sma(data, period){
+  const out=[];
+  for(let i=period-1;i<data.length;i++){
+    let sum=0; for(let j=i-period+1;j<=i;j++) sum+=data[j].close;
+    out.push({time:data[i].time, value:sum/period});
+  }
+  return out;
+}
+function ema(data, period){
+  const out=[]; const k=2/(period+1); let prev=null;
+  for(let i=0;i<data.length;i++){
+    const c=data[i].close;
+    if(prev===null){
+      if(i>=period-1){ let sum=0; for(let j=0;j<period;j++) sum+=data[j].close; prev=sum/period; out.push({time:data[i].time,value:prev}); }
+      continue;
+    }
+    prev = c*k + prev*(1-k);
+    out.push({time:data[i].time, value:prev});
+  }
+  return out;
+}
+function emaRaw(values, period){
+  const out=[]; const k=2/(period+1); let prev=null;
+  for(let i=0;i<values.length;i++){
+    if(prev===null){ prev=values[i]; } else { prev = values[i]*k + prev*(1-k); }
+    out.push(prev);
+  }
+  return out;
+}
+function bollinger(data, period=20, mult=2){
+  const mid=[], upper=[], lower=[];
+  for(let i=period-1;i<data.length;i++){
+    let sum=0; for(let j=i-period+1;j<=i;j++) sum+=data[j].close;
+    const mean = sum/period;
+    let variance=0; for(let j=i-period+1;j<=i;j++) variance += Math.pow(data[j].close-mean,2);
+    const sd = Math.sqrt(variance/period);
+    mid.push({time:data[i].time, value:mean});
+    upper.push({time:data[i].time, value:mean+mult*sd});
+    lower.push({time:data[i].time, value:mean-mult*sd});
+  }
+  return {mid, upper, lower};
+}
+function rsi(data, period=14){
+  const out=[]; let gains=0, losses=0;
+  for(let i=1;i<data.length;i++){
+    const diff = data[i].close - data[i-1].close;
+    if(i<=period){
+      if(diff>=0) gains+=diff; else losses-=diff;
+      if(i===period){ const rs=gains/(losses||1e-9); out.push({time:data[i].time, value:100-100/(1+rs)}); }
+      continue;
+    }
+    const gain = diff>0?diff:0, loss = diff<0?-diff:0;
+    gains = (gains*(period-1)+gain)/period;
+    losses = (losses*(period-1)+loss)/period;
+    const rs = gains/(losses||1e-9);
+    out.push({time:data[i].time, value:100-100/(1+rs)});
+  }
+  return out;
+}
+function macd(data, fast=12, slow=26, signalP=9){
+  const closes = data.map(d=>d.close);
+  const emaFast = emaRaw(closes, fast);
+  const emaSlow = emaRaw(closes, slow);
+  const macdLine = closes.map((_,i)=> emaFast[i]-emaSlow[i]);
+  const signalLine = emaRaw(macdLine, signalP);
+  const startIdx = slow-1;
+  const macdSeries=[], signalSeries=[], histSeries=[];
+  for(let i=startIdx;i<data.length;i++){
+    macdSeries.push({time:data[i].time, value:macdLine[i]});
+    signalSeries.push({time:data[i].time, value:signalLine[i]});
+    const h = macdLine[i]-signalLine[i];
+    histSeries.push({time:data[i].time, value:h, color:h>=0?'#0ecb8177':'#f6465d77'});
+  }
+  return {macdSeries, signalSeries, histSeries};
+}
+function stochastic(data, kPeriod=14, dPeriod=3){
+  const kArr=[];
+  for(let i=kPeriod-1;i<data.length;i++){
+    let hh=-Infinity, ll=Infinity;
+    for(let j=i-kPeriod+1;j<=i;j++){ hh=Math.max(hh,data[j].high); ll=Math.min(ll,data[j].low); }
+    const k = ((data[i].close-ll)/((hh-ll)||1e-9))*100;
+    kArr.push({time:data[i].time, value:k});
+  }
+  const dArr=[];
+  for(let i=dPeriod-1;i<kArr.length;i++){
+    let sum=0; for(let j=i-dPeriod+1;j<=i;j++) sum+=kArr[j].value;
+    dArr.push({time:kArr[i].time, value:sum/dPeriod});
+  }
+  return {kArr, dArr};
+}
+
+/* ---------------- Rendering indicators ---------------- */
+function clearOverlaySeries(){
+  Object.values(overlaySeries).forEach(s=>{ try{ mainChart.removeSeries(s); }catch(e){} });
+  overlaySeries = {};
+}
+function applyIndicators(){
+  clearOverlaySeries();
+  ['rsi','macd','stoch'].forEach(id=>{ if(!activeInd[id]) removeSubPane(id); });
+
+  volumeSeries.applyOptions({visible: !!activeInd.vol && currentMarket==='crypto'});
+
+  if(activeInd.sma){
+    overlaySeries.sma = mainChart.addLineSeries({color:'#f0b90b', lineWidth:1.5, priceLineVisible:false});
+    overlaySeries.sma.setData(sma(lastCandles,20));
+  }
+  if(activeInd.ema){
+    overlaySeries.ema = mainChart.addLineSeries({color:'#e91e63', lineWidth:1.5, priceLineVisible:false});
+    overlaySeries.ema.setData(ema(lastCandles,50));
+  }
+  if(activeInd.bb){
+    const bb = bollinger(lastCandles);
+    overlaySeries.bbU = mainChart.addLineSeries({color:'#3861fb99', lineWidth:1, priceLineVisible:false});
+    overlaySeries.bbM = mainChart.addLineSeries({color:'#3861fb', lineWidth:1, priceLineVisible:false});
+    overlaySeries.bbL = mainChart.addLineSeries({color:'#3861fb99', lineWidth:1, priceLineVisible:false});
+    overlaySeries.bbU.setData(bb.upper); overlaySeries.bbM.setData(bb.mid); overlaySeries.bbL.setData(bb.lower);
+  }
+
+  if(activeInd.rsi){
+    const sp = ensureSubPane('rsi','RSI 14','#ab47bc');
+    if(!sp.series.line) sp.series.line = sp.chart.addLineSeries({color:'#ab47bc', lineWidth:1.5, priceLineVisible:false});
+    const data = rsi(lastCandles,14);
+    sp.series.line.setData(data);
+    if(!sp.series.upper){
+      sp.series.upper = sp.chart.addLineSeries({color:'#37414d', lineWidth:1, priceLineVisible:false});
+      sp.series.lower = sp.chart.addLineSeries({color:'#37414d', lineWidth:1, priceLineVisible:false});
+    }
+    sp.series.upper.setData(data.map(d=>({time:d.time, value:70})));
+    sp.series.lower.setData(data.map(d=>({time:d.time, value:30})));
+    if(data.length){ document.getElementById('val_rsi').textContent = data[data.length-1].value.toFixed(1); }
+    const vr = mainChart.timeScale().getVisibleLogicalRange();
+    if(vr) sp.chart.timeScale().setVisibleLogicalRange(vr);
+  }
+  if(activeInd.macd){
+    const sp = ensureSubPane('macd','MACD','#3861fb');
+    const m = macd(lastCandles);
+    if(!sp.series.hist) sp.series.hist = sp.chart.addHistogramSeries({priceLineVisible:false});
+    if(!sp.series.macd) sp.series.macd = sp.chart.addLineSeries({color:'#3861fb', lineWidth:1.5, priceLineVisible:false});
+    if(!sp.series.signal) sp.series.signal = sp.chart.addLineSeries({color:'#f0b90b', lineWidth:1.5, priceLineVisible:false});
+    sp.series.hist.setData(m.histSeries);
+    sp.series.macd.setData(m.macdSeries);
+    sp.series.signal.setData(m.signalSeries);
+    if(m.macdSeries.length) document.getElementById('val_macd').textContent = m.macdSeries[m.macdSeries.length-1].value.toFixed(4);
+    const vr = mainChart.timeScale().getVisibleLogicalRange();
+    if(vr) sp.chart.timeScale().setVisibleLogicalRange(vr);
+  }
+  if(activeInd.stoch){
+    const sp = ensureSubPane('stoch','Stochastic','#26a69a');
+    const st = stochastic(lastCandles);
+    if(!sp.series.k) sp.series.k = sp.chart.addLineSeries({color:'#26a69a', lineWidth:1.5, priceLineVisible:false});
+    if(!sp.series.d) sp.series.d = sp.chart.addLineSeries({color:'#f0b90b', lineWidth:1.5, priceLineVisible:false});
+    sp.series.k.setData(st.kArr);
+    sp.series.d.setData(st.dArr);
+    if(st.kArr.length) document.getElementById('val_stoch').textContent = st.kArr[st.kArr.length-1].value.toFixed(1);
+    const vr = mainChart.timeScale().getVisibleLogicalRange();
+    if(vr) sp.chart.timeScale().setVisibleLogicalRange(vr);
+  }
+
+  requestAnimationFrame(()=>{
+    Object.values(subCharts).forEach(sc=> sc.chart.applyOptions({width:sc.el.clientWidth, height:sc.el.clientHeight}));
+  });
+}
+
+/* ---------------- Data loading ---------------- */
+function showLoading(v){ document.getElementById('loadingOverlay').classList.toggle('show', v); }
+function showError(msg){
+  const el=document.getElementById('errBanner');
+  if(!msg){ el.style.display='none'; return; }
+  el.textContent=msg; el.style.display='block';
+  setTimeout(()=>{el.style.display='none';}, 6000);
+}
+
+async function loadKlines(){
+  showLoading(true); showError(null);
+  try{
+    let candles;
+    if(currentMarket==='crypto'){
+      const res = await fetch(`${API}/api/crypto/klines?symbol=${currentSymbol}&interval=${currentInterval}&limit=500`);
+      candles = await res.json();
+      if(candles.error) throw new Error(candles.error);
+    } else {
+      const key = getApiKey();
+      if(!key){
+        const k = prompt('برای فارکس، کلید رایگان TwelveData را وارد کنید (twelvedata.com):');
+        if(k){ localStorage.setItem('td_api_key', k.trim()); } else { showLoading(false); return; }
+      }
+      const interval = twelveDataIntervalMap[currentInterval] || '1h';
+      const res = await fetch(`${API}/api/forex/klines?symbol=${encodeURIComponent(currentSymbol)}&interval=${interval}&outputsize=500&apikey=${encodeURIComponent(getApiKey())}`);
+      candles = await res.json();
+      if(candles.error) throw new Error(candles.error);
+    }
+    if(!Array.isArray(candles) || candles.length===0) throw new Error('داده‌ای دریافت نشد.');
+
+    lastCandles = candles;
+    candleSeries.setData(candles);
+    volumeSeries.setData(currentMarket==='crypto'
+      ? candles.map(c=>({time:c.time, value:c.volume, color:c.close>=c.open?'#0ecb8155':'#f6465d55'}))
+      : []);
+    applyIndicators();
+    mainChart.timeScale().fitContent();
+
+    const last = candles[candles.length-1], first = candles[0];
+    const dec = last.close < 10 ? 5 : (last.close<1000?4:2);
+    document.getElementById('symbolPrice').textContent = last.close.toFixed(dec);
+    const chg = ((last.close-first.close)/first.close*100);
+    const chEl = document.getElementById('symbolChange');
+    chEl.textContent = (chg>=0?'+':'')+chg.toFixed(2)+'%';
+    chEl.className = chg>=0 ? 'up-text' : 'down-text';
+  }catch(e){
+    showError('خطا: '+e.message);
+  }finally{
+    showLoading(false);
+  }
+}
+
+/* ---------------- Symbol list / picker sheet ---------------- */
+async function loadSymbolList(market){
+  if(allSymbols[market].length===0){
+    const res = await fetch(`${API}/api/${market}/symbols`);
+    allSymbols[market] = await res.json();
+  }
+  renderSymbolList();
+}
+function renderSymbolList(){
+  const q = document.getElementById('searchInput').value.trim().toUpperCase();
+  const list = allSymbols[currentMarket].filter(s => (s.symbol||'').toUpperCase().includes(q));
+  const container = document.getElementById('symbolList');
+  container.innerHTML = '';
+  list.forEach(s=>{
+    const row = document.createElement('div');
+    row.className = 'sym-row' + (s.symbol===currentSymbol ? ' active':'');
+    const chg = s.changePercent;
+    row.innerHTML = `
+      <div>
+        <div class="sym-name">${s.symbol}</div>
+        <div class="sym-sub">${currentMarket==='crypto' ? 'Binance · Spot' : 'Forex'}</div>
+      </div>
+      <div class="sym-right">
+        <div class="sym-price">${s.price ? s.price.toLocaleString(undefined,{maximumFractionDigits:6}) : ''}</div>
+        ${chg!==undefined ? `<div class="sym-sub ${chg>=0?'up-text':'down-text'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div>` : ''}
+      </div>`;
+    row.onclick = ()=>{
+      currentSymbol = s.symbol;
+      document.getElementById('symbolTitle').textContent = s.symbol;
+      closeSheet('symbol');
+      loadKlines();
+    };
+    container.appendChild(row);
+  });
+}
+
+/* ---------------- Sheets ---------------- */
+function openSheet(which){
+  document.getElementById(which+'Overlay').classList.add('show');
+  document.getElementById(which+'Sheet').classList.add('show');
+}
+function closeSheet(which){
+  document.getElementById(which+'Overlay').classList.remove('show');
+  document.getElementById(which+'Sheet').classList.remove('show');
+}
+document.getElementById('symbolPicker').onclick = ()=>{ openSheet('symbol'); };
+document.getElementById('closeSymbolSheet').onclick = ()=>closeSheet('symbol');
+document.getElementById('symbolOverlay').onclick = ()=>closeSheet('symbol');
+document.getElementById('indDrawerBtn').onclick = ()=>{ openSheet('ind'); };
+document.getElementById('closeIndSheet').onclick = ()=>closeSheet('ind');
+document.getElementById('indOverlay').onclick = ()=>closeSheet('ind');
+
+document.querySelectorAll('.market-tab').forEach(tab=>{
+  tab.onclick = ()=>{
+    document.querySelectorAll('.market-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    currentMarket = tab.dataset.market;
+    currentSymbol = currentMarket==='crypto' ? 'BTCUSDT' : 'EUR/USD';
+    document.getElementById('symbolTitle').textContent = currentSymbol;
+    document.getElementById('marketBadge').textContent = currentMarket==='crypto' ? 'کریپتو' : 'فارکس';
+    loadSymbolList(currentMarket).then(loadKlines);
+  };
+});
+document.getElementById('searchInput').oninput = renderSymbolList;
+
+document.querySelectorAll('.tf-btn').forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentInterval = btn.dataset.tf;
+    loadKlines();
+  };
+});
+
+/* ---------------- Build indicator list UI ---------------- */
+function renderIndList(){
+  const container = document.getElementById('indList');
+  container.innerHTML = '';
+  INDICATORS.forEach(ind=>{
+    const row = document.createElement('div');
+    row.className = 'ind-row';
+    row.innerHTML = `
+      <div>
+        <div class="ind-name">${ind.name}</div>
+        <div class="ind-desc">${ind.desc}</div>
+      </div>
+      <div class="switch ${activeInd[ind.id]?'on':''}" data-id="${ind.id}"><div class="knob"></div></div>`;
+    container.appendChild(row);
+  });
+  container.querySelectorAll('.switch').forEach(sw=>{
+    sw.onclick = ()=>{
+      const id = sw.dataset.id;
+      activeInd[id] = !activeInd[id];
+      sw.classList.toggle('on', activeInd[id]);
+      updateIndCount();
+      applyIndicators();
+    };
+  });
+}
+function updateIndCount(){
+  const n = Object.values(activeInd).filter(Boolean).length;
+  document.getElementById('indCount').textContent = n;
+}
+
+/* ---------------- Boot ---------------- */
+(async function start(){
+  if(typeof LightweightCharts === 'undefined'){
+    document.getElementById('chartArea').innerHTML =
+      '<div style="padding:40px 20px;text-align:center;color:#f6465d;font-size:14px;">'
+      + 'کتابخانهٔ چارت پیدا نشد.<br>فایل lightweight-charts.standalone.production.js را در مسیر '
+      + '<code>static/lib/</code> قرار دهید.</div>';
+    return;
+  }
+  initMainChart();
+  renderIndList();
+  updateIndCount();
+  await loadSymbolList('crypto');
+  await loadKlines();
+  setInterval(()=>{ if(currentMarket==='crypto') loadKlines(); }, 30000);
+})();
+</script>
+</body>
+</html>
